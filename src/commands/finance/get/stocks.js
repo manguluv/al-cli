@@ -1,9 +1,24 @@
 import { getKisToken, readConfig } from '../../../util/config.js';
+import * as yahooFinance from 'yahoo-finance2';
 
 const DOMESTIC_TR_ID_MOCK = "VTTC8434R";
 const DOMESTIC_TR_ID_REAL = "TTTC8434R";
 const OVERSEAS_TR_ID_MOCK = "VTRN3018R";
 const OVERSEAS_TR_ID_REAL = "TTTS3012R";
+
+let yf;
+try {
+  yf = new yahooFinance.default({ suppressNotices: ['yahooSurvey'] });
+} catch (e) {
+  yf = yahooFinance.default;
+}
+
+async function fetchYahooPrice(ticker) {
+  const quote = await yf.quote(ticker);
+  const price = parseFloat(quote.regularMarketPrice || 0);
+  if (isNaN(price) || price === 0) throw new Error('Invalid price');
+  return price;
+}
 
 export async function getStocks() {
   try {
@@ -71,14 +86,28 @@ export async function getStocks() {
     for (const s of oStocks) {
       const qty = parseInt(s.ovrs_cblc_qty || 0);
       if (qty === 0) continue;
-      const price = parseFloat(s.ovrs_now_pric || 0);
-      const evalAmt = qty * price; // USD 기준
-      const profit = parseFloat(s.evlu_pfls_amt || 0);
+      let price = parseFloat(s.ovrs_now_pric || 0);
+      const ticker = s.ovrs_pdno;
+      let usedYahoo = false;
+
+      if (price === 0 && ticker) {
+        try {
+          price = await fetchYahooPrice(ticker);
+          usedYahoo = true;
+        } catch (err) {
+          console.error(`⚠️  yfinance 실패 (${ticker}): ${err.message}`);
+        }
+      }
+
+      const evalAmt = qty * price;
+      const avgPrice = parseFloat(s.pchs_avg_pric || 0);
+      const profit = avgPrice > 0 ? (price - avgPrice) * qty : parseFloat(s.evlu_pfls_amt || 0);
       totalEval += evalAmt;
       totalProfit += profit;
 
+      const priceDisplay = usedYahoo ? `${price.toFixed(2)}*` : price.toFixed(2);
       console.log(
-        `${"해외(미국)".padEnd(10)} | ${(s.ovrs_item_name || s.ovrs_pdno).padEnd(20)} | ${qty.toString().padEnd(8)} | ${`$${price.toFixed(2)}`.padEnd(15)} | ${`$${evalAmt.toFixed(2)}`.padEnd(15)} | ${`$${profit.toFixed(2)}`.padEnd(15)}`
+        `${"해외(미국)".padEnd(10)} | ${(s.ovrs_item_name || ticker).padEnd(20)} | ${qty.toString().padEnd(8)} | ${`$${priceDisplay}`.padEnd(15)} | ${`$${evalAmt.toFixed(2)}`.padEnd(15)} | ${`$${profit.toFixed(2)}`.padEnd(15)}`
       );
     }
     
