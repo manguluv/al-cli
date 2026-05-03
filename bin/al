@@ -2,8 +2,16 @@
 
 import { Command } from 'commander';
 import dotenv from 'dotenv';
+import { execFileSync } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 import { getStocks } from '../src/commands/finance/get/stocks.js';
 import { getCash } from '../src/commands/finance/get/cash.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PYTHON_ROOT = path.join(__dirname, '..', 'src_py');
 
 dotenv.config();
 
@@ -11,8 +19,31 @@ const program = new Command();
 
 program
   .name('al')
-  .description('AL CLI - Manage your finances')
+  .description('AL CLI - Manage your finances (Hybrid JS/Python)')
   .version('1.0.0');
+
+// Python 서브커맨드 핸들러 함수 
+function runPythonScript(scriptPath, args = []) {
+  try {
+    const result = execFileSync('python3', [scriptPath, ...args], {
+      stdio: 'inherit',
+      cwd: path.join(__dirname, '..')
+    });
+  } catch (error) {
+    process.exit(error.code || 1);
+  }
+}
+
+const pyCommand = program
+  .command('py')
+  .description('Run Python scripts from src_py');
+
+pyCommand
+  .command('stocks')
+  .description('Get stock information via Python (KIS API & yfinance)')
+  .action(() => {
+    runPythonScript(path.join(PYTHON_ROOT, 'commands', 'finance', 'get', 'stocks.py'));
+  });
 
 const finance = program
   .command('finance')
@@ -24,7 +55,7 @@ const get = finance
 
 get
   .command('stocks')
-  .description('Get stock information')
+  .description('Get stock information (JS)')
   .action(getStocks);
 
 get
