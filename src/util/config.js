@@ -5,6 +5,10 @@ import toml from 'toml';
 
 const CONFIG_DIR = path.join(os.homedir(), '.al-cli');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.toml');
+const TOKEN_CACHE_FILE = path.join(CONFIG_DIR, 'token_cache.json');
+const TOKEN_VALID_MS = 24 * 60 * 60 * 1000;
+const TOKEN_CACHE_FILE = path.join(CONFIG_DIR, 'token_cache.json');
+const TOKEN_VALID_MS = 24 * 60 * 60 * 1000;
 
 const DEFAULT_CONFIG = {
   default_currency: 'USD',
@@ -61,9 +65,35 @@ function writeConfig(config) {
 }
 
 /**
- * KIS API 인증 토큰 발급
+ * KIS API 인증 토큰 발급 (캐싱 지원)
  */
+function readTokenCache() {
+  try {
+    if (fs.existsSync(TOKEN_CACHE_FILE)) {
+      const raw = fs.readFileSync(TOKEN_CACHE_FILE, 'utf-8');
+      return JSON.parse(raw);
+    }
+  } catch (error) {
+    console.error(`토큰 캐시 읽기 실패: ${error.message}`);
+  }
+  return null;
+}
+
+function writeTokenCache(cacheData) {
+  try {
+    ensureConfigDir();
+    fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify(cacheData), 'utf-8');
+  } catch (error) {
+    console.error(`토큰 캐시 쓰기 실패: ${error.message}`);
+  }
+}
+
 export async function getKisToken() {
+  const cached = readTokenCache();
+  if (cached && cached.expiresAt > Date.now()) {
+    return { token: cached.token, baseUrl: cached.baseUrl, isMock: cached.isMock };
+  }
+
   const config = readConfig();
   const { app_key, app_secret, is_mock } = config.kis;
 
@@ -87,7 +117,16 @@ export async function getKisToken() {
   if (!data.access_token) {
     throw new Error(`토큰 발급 실패: ${JSON.stringify(data)}`);
   }
-  return { token: data.access_token, baseUrl, isMock: is_mock };
+
+  const newToken = data.access_token;
+  writeTokenCache({
+    token: newToken,
+    baseUrl,
+    isMock: is_mock,
+    expiresAt: Date.now() + TOKEN_VALID_MS
+  });
+
+  return { token: newToken, baseUrl, isMock: is_mock };
 }
 
 export { readConfig, writeConfig, CONFIG_DIR, CONFIG_FILE };
