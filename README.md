@@ -14,12 +14,14 @@
 al-cli/
 ├── bin/
 │   └── al                  # CLI 진입점 (Node.js 스크립트)
-├── src/
+├── src/                    # JavaScript 로직
 │   ├── commands/           # 기능별 명령어 모듈
-│   │   └── finance/        # 금융 관련 로직
-│   └── util/               # 설정 및 인증 유틸리티 (config.js 등)
-├── .gitignore
-├── package.json            # 의존성 및 프로젝트 메타데이터
+│   └── util/               # 설정 및 인증 유틸리티
+├── src_py/                 # Python 로직 (양립 지원)
+│   ├── commands/finance/   # 금융 관련 로직
+│   └── util/config.py      # 환경 변수 관리
+├── requirements.txt        # Python 의존성
+├── package.json            # Node.js 의존성
 └── README.md
 ```
 
