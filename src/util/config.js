@@ -7,8 +7,6 @@ const CONFIG_DIR = path.join(os.homedir(), '.al-cli');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.toml');
 const TOKEN_CACHE_FILE = path.join(CONFIG_DIR, 'token_cache.json');
 const TOKEN_VALID_MS = 24 * 60 * 60 * 1000;
-const TOKEN_CACHE_FILE = path.join(CONFIG_DIR, 'token_cache.json');
-const TOKEN_VALID_MS = 24 * 60 * 60 * 1000;
 
 const DEFAULT_CONFIG = {
   default_currency: 'USD',
