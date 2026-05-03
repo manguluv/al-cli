@@ -1,7 +1,92 @@
-import { readConfig } from '../../../util/config.js';
+import { getKisToken, readConfig } from '../../../util/config.js';
 
-export function getStocks() {
-  const config = readConfig();
-  console.log(`Fetching stocks in ${config.default_currency}...`);
-  console.log(`Theme: ${config.theme}, Locale: ${config.locale}`);
+const DOMESTIC_TR_ID_MOCK = "VTTC8434R";
+const DOMESTIC_TR_ID_REAL = "TTTC8434R";
+const OVERSEAS_TR_ID_MOCK = "VTRN3018R";
+const OVERSEAS_TR_ID_REAL = "TTTS3012R";
+
+export async function getStocks() {
+  try {
+    const { token, baseUrl, isMock } = await getKisToken();
+    const config = readConfig();
+    const { account_no: CANO, account_product: ACNT_PRDT_CD } = config.kis;
+
+    const headers = {
+      "content-type": "application/json",
+      "authorization": `Bearer ${token}`,
+      "appkey": config.kis.app_key,
+      "appsecret": config.kis.app_secret,
+    };
+
+    // 1. 국내주식 조회
+    const dTrId = isMock ? DOMESTIC_TR_ID_MOCK : DOMESTIC_TR_ID_REAL;
+    const dUrl = `${baseUrl}/uapi/domestic-stock/v1/trading/inquire-balance`;
+    const dParams = new URLSearchParams({
+      CANO, ACNT_PRDT_CD, AFHR_FLPR_YN: "N", OFL_YN: "", INQR_DVSN: "02",
+      UNPR_DVSN: "01", FUND_STTL_ICLD_YN: "N", FNCG_AMT_AUTO_RDPT_YN: "N",
+      PRCS_DVSN: "01", CTX_AREA_FK100: "", CTX_AREA_NK100: ""
+    });
+
+    const dRes = await fetch(`${dUrl}?${dParams}`, { headers: { ...headers, tr_id: dTrId } });
+    const dData = await dRes.json();
+    const dStocks = dData.output1 || [];
+
+    // 2. 해외주식 조회 (미국)
+    const oTrId = isMock ? OVERSEAS_TR_ID_MOCK : OVERSEAS_TR_ID_REAL;
+    const oUrl = `${baseUrl}/uapi/overseas-stock/v1/trading/inquire-balance`;
+    const oParams = new URLSearchParams({
+      CANO, ACNT_PRDT_CD, OVRS_EXCG_CD: "NASD", TR_CRCY_CD: "USD",
+      OVRS_ICLD_EXRS_YN: "N", PRCS_DVSN: "01", CTX_AREA_FK200: "", CTX_AREA_NK200: ""
+    });
+
+    const oRes = await fetch(`${oUrl}?${oParams}`, { headers: { ...headers, tr_id: oTrId } });
+    const oData = await oRes.json();
+    const oStocks = oData.output1 || [];
+
+    // 3. 출력 포맷팅
+    console.log("\n📋 [보유 종목 상세]");
+    console.log("-".repeat(100));
+    console.log(
+      `${"구분".padEnd(10)} | ${"종목명".padEnd(20)} | ${"수량".padEnd(8)} | ${"단가".padEnd(15)} | ${"평가금액".padEnd(15)} | ${"손익".padEnd(15)}`
+    );
+    console.log("-".repeat(100));
+
+    let totalEval = 0;
+    let totalProfit = 0;
+
+    for (const s of dStocks) {
+      const qty = parseInt(s.hldg_qty || 0);
+      if (qty === 0) continue;
+      const price = parseInt(s.prpr || 0);
+      const evalAmt = qty * price;
+      const profit = parseInt(s.evlu_pfls_amt || 0);
+      totalEval += evalAmt;
+      totalProfit += profit;
+
+      console.log(
+        `${"국내".padEnd(10)} | ${(s.prdt_name || "unknown").padEnd(20)} | ${qty.toString().padEnd(8)} | ${price.toLocaleString().padEnd(15)} | ${evalAmt.toLocaleString().padEnd(15)} | ${profit.toLocaleString().padEnd(15)}`
+      );
+    }
+
+    for (const s of oStocks) {
+      const qty = parseInt(s.ovrs_cblc_qty || 0);
+      if (qty === 0) continue;
+      const price = parseFloat(s.ovrs_now_pric || 0);
+      const evalAmt = qty * price; // USD 기준
+      const profit = parseFloat(s.evlu_pfls_amt || 0);
+      totalEval += evalAmt;
+      totalProfit += profit;
+
+      console.log(
+        `${"해외(미국)".padEnd(10)} | ${(s.ovrs_item_name || s.ovrs_pdno).padEnd(20)} | ${qty.toString().padEnd(8)} | ${`$${price.toFixed(2)}`.padEnd(15)} | ${`$${evalAmt.toFixed(2)}`.padEnd(15)} | ${`$${profit.toFixed(2)}`.padEnd(15)}`
+      );
+    }
+    
+    console.log("-".repeat(100));
+    console.log(`총 평가금액: ${totalEval.toLocaleString()} ${isMock ? "(Mock)" : ""}`);
+    console.log(`총 평가손익: ${totalProfit.toLocaleString()} ${isMock ? "(Mock)" : ""}`);
+
+  } catch (error) {
+    console.error(`❌ 오류 발생: ${error.message}`);
+  }
 }
