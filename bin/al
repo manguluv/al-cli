@@ -2,6 +2,8 @@
 
 import { Command } from 'commander';
 import dotenv from 'dotenv';
+import { getStocks } from '../src/commands/finance/get/stocks.js';
+import { getCash } from '../src/commands/finance/get/cash.js';
 
 dotenv.config();
 
@@ -23,15 +25,11 @@ const get = finance
 get
   .command('stocks')
   .description('Get stock information')
-  .action(() => {
-    console.log('Fetching stocks...');
-  });
+  .action(getStocks);
 
 get
   .command('cash')
   .description('Get cash information')
-  .action(() => {
-    console.log('Fetching cash...');
-  });
+  .action(getCash);
 
 program.parse();
