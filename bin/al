@@ -1,0 +1,37 @@
+#!/usr/bin/env node
+
+import { Command } from 'commander';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const program = new Command();
+
+program
+  .name('al')
+  .description('AL CLI - Manage your finances')
+  .version('1.0.0');
+
+const finance = program
+  .command('finance')
+  .description('Finance operations');
+
+const get = finance
+  .command('get')
+  .description('Retrieve financial data');
+
+get
+  .command('stocks')
+  .description('Get stock information')
+  .action(() => {
+    console.log('Fetching stocks...');
+  });
+
+get
+  .command('cash')
+  .description('Get cash information')
+  .action(() => {
+    console.log('Fetching cash...');
+  });
+
+program.parse();
