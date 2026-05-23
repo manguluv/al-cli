@@ -20,6 +20,19 @@ async function fetchYahooPrice(ticker) {
   return price;
 }
 
+async function fetchKrwExchangeRate() {
+  try {
+    // Yahoo Finance에서 USD/KRW 환율 조회 (KRW=X 심볼)
+    const quote = await yf.quote('KRW=X');
+    const rate = parseFloat(quote.regularMarketPrice || 0);
+    if (isNaN(rate) || rate === 0) throw new Error('Invalid exchange rate');
+    return rate;
+  } catch (error) {
+    console.error(`⚠️  환율 조회 실패: ${error.message} (기본값 1400 사용)`);
+    return 1400; // 폴백 기본값
+  }
+}
+
 export async function getStocks() {
   try {
     const { token, baseUrl, isMock } = await getKisToken();
@@ -51,12 +64,15 @@ export async function getStocks() {
     const oUrl = `${baseUrl}/uapi/overseas-stock/v1/trading/inquire-balance`;
     const oParams = new URLSearchParams({
       CANO, ACNT_PRDT_CD, OVRS_EXCG_CD: "NASD", TR_CRCY_CD: "USD",
-      OVRS_ICLD_EXRS_YN: "N", PRCS_DVSN: "01", CTX_AREA_FK200: "", CTX_AREA_NK200: ""
+      OVRS_ICLD_EXRS_YN: "Y", PRCS_DVSN: "01", CTX_AREA_FK200: "", CTX_AREA_NK200: ""
     });
 
     const oRes = await fetch(`${oUrl}?${oParams}`, { headers: { ...headers, tr_id: oTrId } });
     const oData = await oRes.json();
     const oStocks = oData.output1 || [];
+    
+    // Yahoo Finance에서 USD/KRW 환율 조회 (KIS API에 환율 정보 누락 이슈 있음)
+    const exchangeRate = await fetchKrwExchangeRate();
 
     // 3. 출력 포맷팅
     console.log("\n📋 [보유 종목 상세]");
@@ -99,15 +115,20 @@ export async function getStocks() {
         }
       }
 
-      const evalAmt = qty * price;
+      // 달러 단가를 원화로 환산
+      const priceKRW = price * exchangeRate;
       const avgPrice = parseFloat(s.pchs_avg_pric || 0);
-      const profit = avgPrice > 0 ? (price - avgPrice) * qty : parseFloat(s.evlu_pfls_amt || 0);
-      totalEval += evalAmt;
-      totalProfit += profit;
+      
+      // 원화 기준 평가금액 및 손익 계산
+      const evalAmtKRW = qty * priceKRW;
+      const profitKRW = avgPrice > 0 ? (priceKRW - (avgPrice * exchangeRate)) * qty : (parseFloat(s.evlu_pfls_amt || 0) * exchangeRate);
+      
+      totalEval += evalAmtKRW;
+      totalProfit += profitKRW;
 
       const priceDisplay = usedYahoo ? `${price.toFixed(2)}*` : price.toFixed(2);
       console.log(
-        `${"해외(미국)".padEnd(10)} | ${(s.ovrs_item_name || ticker).padEnd(20)} | ${qty.toString().padEnd(8)} | ${`$${priceDisplay}`.padEnd(15)} | ${`$${evalAmt.toFixed(2)}`.padEnd(15)} | ${`$${profit.toFixed(2)}`.padEnd(15)}`
+        `${"해외(미국)".padEnd(10)} | ${(s.ovrs_item_name || ticker).padEnd(20)} | ${qty.toString().padEnd(8)} | ${`$${priceDisplay}`.padEnd(15)} | ${`₩${Math.round(evalAmtKRW).toLocaleString()}`.padEnd(15)} | ${`₩${Math.round(profitKRW).toLocaleString()}`.padEnd(15)}`
       );
     }
     
