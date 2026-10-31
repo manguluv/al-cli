@@ -33,7 +33,9 @@ async function fetchKrwExchangeRate() {
   }
 }
 
-export async function getStocks() {
+export async function getStocks(options = {}) {
+  const jsonMode = options.json === true;
+
   try {
     const { token, baseUrl, isMock } = await getKisToken();
     const config = readConfig();
@@ -57,6 +59,9 @@ export async function getStocks() {
 
     const dRes = await fetch(`${dUrl}?${dParams}`, { headers: { ...headers, tr_id: dTrId } });
     const dData = await dRes.json();
+    if (dData.rt_cd && dData.rt_cd !== '0') {
+      console.error(`⚠️ 국내 잔고 조회 실패: ${dData.msg1 || 'unknown error'} (rt_cd=${dData.rt_cd})`);
+    }
     const dStocks = dData.output1 || [];
 
     // 2. 해외주식 조회 (미국)
@@ -69,12 +74,74 @@ export async function getStocks() {
 
     const oRes = await fetch(`${oUrl}?${oParams}`, { headers: { ...headers, tr_id: oTrId } });
     const oData = await oRes.json();
+    if (oData.rt_cd && oData.rt_cd !== '0') {
+      console.error(`⚠️ 해외 잔고 조회 실패: ${oData.msg1 || 'unknown error'} (rt_cd=${oData.rt_cd})`);
+    }
     const oStocks = oData.output1 || [];
-    
+
     // Yahoo Finance에서 USD/KRW 환율 조회 (KIS API에 환율 정보 누락 이슈 있음)
     const exchangeRate = await fetchKrwExchangeRate();
 
-    // 3. 출력 포맷팅
+    // JSON 모드: 티커 포함 JSON 배열 출력
+    if (jsonMode) {
+      const stocks = [];
+
+      for (const s of dStocks) {
+        const qty = parseInt(s.hldg_qty || 0);
+        if (qty === 0) continue;
+        const price = parseInt(s.prpr || 0);
+        const evalAmt = qty * price;
+        const profit = parseInt(s.evlu_pfls_amt || 0);
+        stocks.push({
+          ticker: s.pdno || '',
+          name: s.prdt_name || 'unknown',
+          market: 'KR',
+          qty,
+          price,
+          currency: 'KRW',
+          evalAmt,
+          profit,
+        });
+      }
+
+      for (const s of oStocks) {
+        const qty = parseInt(s.ovrs_cblc_qty || 0);
+        if (qty === 0) continue;
+        let price = parseFloat(s.ovrs_now_pric || 0);
+        const ticker = s.ovrs_pdno;
+        let usedYahoo = false;
+
+        if (price === 0 && ticker) {
+          try {
+            price = await fetchYahooPrice(ticker);
+            usedYahoo = true;
+          } catch (err) {
+            console.error(`⚠️  yfinance 실패 (${ticker}): ${err.message}`);
+          }
+        }
+
+        const priceKRW = price * exchangeRate;
+        const avgPrice = parseFloat(s.pchs_avg_pric || 0);
+        const evalAmtKRW = qty * priceKRW;
+        const profitKRW = avgPrice > 0 ? (priceKRW - (avgPrice * exchangeRate)) * qty : (parseFloat(s.evlu_pfls_amt || 0) * exchangeRate);
+
+        stocks.push({
+          ticker: ticker || '',
+          name: s.ovrs_item_name || ticker || 'unknown',
+          market: 'US',
+          qty,
+          price,
+          currency: 'USD',
+          evalAmt: Math.round(evalAmtKRW),
+          profit: Math.round(profitKRW),
+        });
+      }
+
+      console.log(JSON.stringify(stocks));
+      return;
+    }
+
+    // 테이블 모드 (기존 로직 유지)
     console.log("\n📋 [보유 종목 상세]");
     console.log("-".repeat(100));
     console.log(
@@ -118,11 +185,11 @@ export async function getStocks() {
       // 달러 단가를 원화로 환산
       const priceKRW = price * exchangeRate;
       const avgPrice = parseFloat(s.pchs_avg_pric || 0);
-      
+
       // 원화 기준 평가금액 및 손익 계산
       const evalAmtKRW = qty * priceKRW;
       const profitKRW = avgPrice > 0 ? (priceKRW - (avgPrice * exchangeRate)) * qty : (parseFloat(s.evlu_pfls_amt || 0) * exchangeRate);
-      
+
       totalEval += evalAmtKRW;
       totalProfit += profitKRW;
 
@@ -131,7 +198,7 @@ export async function getStocks() {
         `${"해외(미국)".padEnd(10)} | ${(s.ovrs_item_name || ticker).padEnd(20)} | ${qty.toString().padEnd(8)} | ${`$${priceDisplay}`.padEnd(15)} | ${`₩${Math.round(evalAmtKRW).toLocaleString()}`.padEnd(15)} | ${`₩${Math.round(profitKRW).toLocaleString()}`.padEnd(15)}`
       );
     }
-    
+
     console.log("-".repeat(100));
     console.log(`총 평가금액: ${totalEval.toLocaleString()} ${isMock ? "(Mock)" : ""}`);
     console.log(`총 평가손익: ${totalProfit.toLocaleString()} ${isMock ? "(Mock)" : ""}`);

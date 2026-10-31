@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 
 import { getStocks } from '../src/commands/finance/get/stocks.js';
 import { getCash } from '../src/commands/finance/get/cash.js';
+import { getOrders } from '../src/commands/finance/get/orders.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,11 +57,24 @@ const get = finance
 get
   .command('stocks')
   .description('Get stock information (JS)')
-  .action(getStocks);
+  .option('--json', 'Output as JSON with ticker information')
+  .action((options) => getStocks(options));
 
 get
   .command('cash')
   .description('Get cash information')
   .action(getCash);
+
+get
+  .command('orders')
+  .description('Get order/execution history (주문체결내역)')
+  .option('--start <date>', 'Start date (YYYYMMDD), default: today')
+  .option('--end <date>', 'End date (YYYYMMDD), default: today')
+  .option('--json', 'Output as JSON')
+  .option('--ccld <type>', 'Execution type (all|filled|unfilled, default: all)')
+  .option('--sll-buy <type>', 'Sell/Buy (all|sell|buy, default: all)')
+  .option('--pdno <code>', '상품번호 (특정 종목만 조회)')
+  .option('--ovrs-excg <code>', '해외거래소코드 (NASD/NYSE/AMEX 등)')
+  .action((options) => getOrders(options));
 
 program.parse();
